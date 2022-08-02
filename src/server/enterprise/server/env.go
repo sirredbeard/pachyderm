@@ -25,7 +25,6 @@ type Env struct {
 	EtcdClient *clientv3.Client
 	EtcdPrefix string
 
-	AuthServer    auth.APIServer
 	GetPachClient func(context.Context) *client.APIClient
 	getKubeClient func() *kube.Clientset
 
@@ -35,6 +34,7 @@ type Env struct {
 	unpausedMode      string
 	Logger            *logrus.Logger
 	Config            serviceenv.Configuration
+	senv              serviceenv.ServiceEnv
 }
 
 // PauseMode represents whether a server is unpaused, paused, a sidecar or an enterprise server.
@@ -71,7 +71,6 @@ func EnvFromServiceEnv(senv serviceenv.ServiceEnv, etcdPrefix string, txEnv *txn
 		EtcdClient: senv.GetEtcdClient(),
 		EtcdPrefix: etcdPrefix,
 
-		AuthServer:    senv.AuthServer(),
 		GetPachClient: senv.GetPachClient,
 		getKubeClient: senv.GetKubeClient,
 
@@ -79,11 +78,16 @@ func EnvFromServiceEnv(senv serviceenv.ServiceEnv, etcdPrefix string, txEnv *txn
 		namespace:         senv.Config().Namespace,
 		Logger:            senv.Logger(),
 		Config:            *senv.Config(),
+		senv:              senv,
 	}
 	for _, o := range options {
 		e = o(e)
 	}
 	return &e
+}
+
+func (e Env) AuthServer() auth.APIServer {
+	return e.senv.AuthServer()
 }
 
 func EnterpriseConfigCollection(db *pachsql.DB, listener col.PostgresListener) col.PostgresCollection {

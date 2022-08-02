@@ -77,7 +77,7 @@ func (a *apiServer) EnvBootstrap(ctx context.Context) error {
 				return errors.Wrapf(err, "add localhost cluster in the license service")
 			}
 		}
-		_, err = a.env.EnterpriseServer.Activate(ctx, &ec.ActivateRequest{
+		_, err = a.env.EnterpriseServer().Activate(ctx, &ec.ActivateRequest{
 			Id:            localhostEnterpriseClusterId,
 			LicenseServer: localhostPeerAddr,
 			Secret:        a.env.Config.EnterpriseSecret})

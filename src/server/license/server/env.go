@@ -9,17 +9,21 @@ import (
 
 // Env is the dependencies required for a license API Server
 type Env struct {
-	DB               *pachsql.DB
-	Listener         collection.PostgresListener
-	Config           *serviceenv.Configuration
-	EnterpriseServer enterprise.APIServer
+	DB       *pachsql.DB
+	Listener collection.PostgresListener
+	Config   *serviceenv.Configuration
+	senv     serviceenv.ServiceEnv
 }
 
 func EnvFromServiceEnv(senv serviceenv.ServiceEnv) *Env {
 	return &Env{
-		DB:               senv.GetDBClient(),
-		Listener:         senv.GetPostgresListener(),
-		Config:           senv.Config(),
-		EnterpriseServer: senv.EnterpriseServer(),
+		DB:       senv.GetDBClient(),
+		Listener: senv.GetPostgresListener(),
+		Config:   senv.Config(),
+		senv:     senv,
 	}
+}
+
+func (e *Env) EnterpriseServer() enterprise.APIServer {
+	return e.senv.EnterpriseServer()
 }

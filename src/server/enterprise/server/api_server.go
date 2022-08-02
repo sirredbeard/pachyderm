@@ -195,7 +195,7 @@ func (a *apiServer) heartbeatToServer(ctx context.Context, licenseServer, id, se
 
 	var clientID string
 	authEnabled := true
-	config, err := a.env.AuthServer.GetConfiguration(ctx, &auth.GetConfigurationRequest{})
+	config, err := a.env.AuthServer().GetConfiguration(ctx, &auth.GetConfigurationRequest{})
 	if err != nil && auth.IsErrNotActivated(err) {
 		authEnabled = false
 	} else if err != nil {
