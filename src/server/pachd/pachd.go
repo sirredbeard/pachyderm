@@ -232,18 +232,6 @@ func RunFullServer(ctx context.Context, config any) (retErr error) {
 }
 
 func RunEnterpriseServer(ctx context.Context, config any) (retErr error) {
-	/*
-		internal
-		external
-
-		license
-		enterprise
-		identity
-		auth
-		admin
-		health
-		version
-	*/
 	var (
 		s   = new(Server)
 		err error
@@ -278,13 +266,6 @@ func RunEnterpriseServer(ctx context.Context, config any) (retErr error) {
 	}
 	s.txnEnv = transactionenv.New()
 	s.licenseEnv = licenseserver.EnvFromServiceEnv(s.env)
-	// license
-	// 	enterprise
-	// 	identity
-	// 	auth
-	// 	admin
-	// 	health
-	// 	version
 	if err := s.initServers(
 		licenseServer,
 		enterpriseEnterpriseServer,
@@ -322,20 +303,45 @@ func RunEnterpriseServer(ctx context.Context, config any) (retErr error) {
 	return <-errChan
 }
 
-func RunSidecar(ctx context.Context, config any) error {
-	/*
-		external
-
-		enterprise
-		auth
-		pfs
-		pps
-		txn
-		health
-		debug
-		proxy
-	*/
-	return errors.New("unimplemented")
+func RunSidecar(ctx context.Context, config any) (retErr error) {
+	var (
+		s   = new(Server)
+		err error
+	)
+	defer func() {
+		if retErr != nil {
+			pprof.Lookup("goroutine").WriteTo(os.Stderr, 2) //nolint:errcheck
+		}
+	}()
+	if s.env, err = setup(config, "pachyderm-pachd-sidecar"); err != nil {
+		return err
+	}
+	authInterceptor := authmw.NewInterceptor(s.env.AuthServer)
+	loggingInterceptor := loggingmw.NewLoggingInterceptor(s.env.Logger())
+	if s.internal, err = newInternalServer(ctx, authInterceptor, loggingInterceptor); err != nil {
+		return err
+	}
+	s.txnEnv = transactionenv.New()
+	if err := s.initServers(
+		sidecarEnterpriseServer,
+		sidecarAuthServer,
+		pfsServer,
+		sidecarPPSServer,
+		transactionServer,
+		healthServer,
+		proxyServer,
+	); err != nil {
+		return err
+	}
+	s.txnEnv.Initialize(s.env, s.txn)
+	// The sidecar only needs to serve traffic on the peer port, as it only serves
+	// traffic from the user container (the worker binary and occasionally user
+	// pipelines)
+	if _, err := s.internal.ListenTCP("", s.env.Config().PeerPort); err != nil {
+		return err
+	}
+	s.health.Resume()
+	return s.internal.Wait()
 }
 
 func RunPausedServer(ctx context.Context, config any) error {
@@ -501,6 +507,17 @@ func enterpriseEnterpriseServer(s *Server) error {
 	return nil
 }
 
+func sidecarEnterpriseServer(s *Server) error {
+	s.enterpriseEnv = eprsserver.EnvFromServiceEnv(s.env, path.Join(s.env.Config().EtcdPrefix, s.env.Config().EnterpriseEtcdPrefix), s.txnEnv)
+	e, err := eprsserver.NewEnterpriseServer(s.enterpriseEnv, false)
+	if err != nil {
+		return err
+	}
+	s.registerGRPCServer(func(g *grpc.Server) { eprsclient.RegisterAPIServer(g, e) })
+	s.env.SetEnterpriseServer(e)
+	return nil
+}
+
 func identityServer(s *Server) error {
 	env := s.env
 	if env.Config().EnterpriseMember {
@@ -539,7 +556,19 @@ func authServer(s *Server) error {
 	}
 	s.registerGRPCServer(func(g *grpc.Server) { auth.RegisterAPIServer(g, a) })
 	s.env.SetAuthServer(a)
-	// FIXME: can this be nil for sidecar/paused?
+	// FIXME: can this be nil for paused?
+	s.enterpriseEnv.AuthServer = a
+	s.bootstrappers = append(s.bootstrappers, a)
+	return nil
+}
+
+func sidecarAuthServer(s *Server) error {
+	a, err := authserver.NewAuthServer(authserver.EnvFromServiceEnv(s.env, s.txnEnv), false, false, false)
+	if err != nil {
+		return err
+	}
+	s.registerGRPCServer(func(g *grpc.Server) { auth.RegisterAPIServer(g, a) })
+	s.env.SetAuthServer(a)
 	s.enterpriseEnv.AuthServer = a
 	s.bootstrappers = append(s.bootstrappers, a)
 	return nil
@@ -560,8 +589,21 @@ func pfsServer(s *Server) error {
 }
 
 func ppsServer(s *Server) error {
-	p, err := pps_server.NewAPIServer(
-		pps_server.EnvFromServiceEnv(s.env, s.txnEnv, s.reporter),
+	p, err := pps_server.NewAPIServer(pps_server.EnvFromServiceEnv(s.env, s.txnEnv, s.reporter))
+	if err != nil {
+		return err
+	}
+	s.registerGRPCServer(func(g *grpc.Server) { pps.RegisterAPIServer(g, p) })
+	s.env.SetPpsServer(p)
+	return nil
+}
+
+func sidecarPPSServer(s *Server) error {
+	p, err := pps_server.NewSidecarAPIServer(
+		pps_server.EnvFromServiceEnv(s.env, s.txnEnv, nil),
+		s.env.Config().Namespace,
+		s.env.Config().PPSWorkerPort,
+		s.env.Config().PeerPort,
 	)
 	if err != nil {
 		return err
