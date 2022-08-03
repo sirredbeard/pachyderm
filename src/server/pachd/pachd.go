@@ -231,7 +231,7 @@ func RunFullServer(ctx context.Context, config any) (retErr error) {
 	return <-errChan
 }
 
-func RunEnterpriseServer(ctx context.Context, config any) error {
+func RunEnterpriseServer(ctx context.Context, config any) (retErr error) {
 	/*
 		internal
 		external
@@ -244,6 +244,82 @@ func RunEnterpriseServer(ctx context.Context, config any) error {
 		health
 		version
 	*/
+	var (
+		s   = new(Server)
+		err error
+	)
+	defer func() {
+		if retErr != nil {
+			log.WithError(retErr).Print("failed to start server")
+			_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 2) // swallow error, not much we can do if we can't write to stderr
+		}
+	}()
+
+	s.env, err = setup(config, "pachyderm-pachd-enterprise")
+	if err != nil {
+		return err
+	}
+	if err := setupDB(context.Background(), s.env); err != nil {
+		return err
+	}
+	if !s.env.Config().EnterpriseMember {
+		s.env.InitDexDB()
+	}
+
+	// Setup External Pachd GRPC Server.
+	authInterceptor := authmw.NewInterceptor(s.env.AuthServer)
+	loggingInterceptor := loggingmw.NewLoggingInterceptor(s.env.Logger(), loggingmw.WithLogFormat(s.env.Config().LogFormat))
+	if s.external, err = newExternalServer(ctx, authInterceptor, loggingInterceptor); err != nil {
+		return err
+	}
+	// Setup Internal Pachd GRPC Server.
+	if s.internal, err = newInternalServer(ctx, authInterceptor, loggingInterceptor); err != nil {
+		return err
+	}
+	s.txnEnv = transactionenv.New()
+	s.licenseEnv = licenseserver.EnvFromServiceEnv(s.env)
+	// license
+	// 	enterprise
+	// 	identity
+	// 	auth
+	// 	admin
+	// 	health
+	// 	version
+	if err := s.initServers(
+		licenseServer,
+		enterpriseEnterpriseServer,
+		enterpriseIdentityServer,
+		authServer,
+		adminServer,
+		healthServer,
+		versionServer,
+	); err != nil {
+		return err
+	}
+	s.txnEnv.Initialize(s.env, nil)
+	if _, err := s.internal.ListenTCP("", s.env.Config().PeerPort); err != nil {
+		return err
+	}
+	for _, b := range s.bootstrappers {
+		if err := b.EnvBootstrap(ctx); err != nil {
+			return errors.EnsureStack(err)
+		}
+	}
+	if _, err := s.external.ListenTCP("", s.env.Config().Port); err != nil {
+		return err
+	}
+	s.health.Resume()
+	// Create the goroutines for the servers.
+	// Any server error is considered critical and will cause Pachd to exit.
+	// The first server that errors will have its error message logged.
+	errChan := make(chan error, 1)
+	go waitForError("External Enterprise GRPC Server", errChan, true, func() error {
+		return s.external.Wait()
+	})
+	go waitForError("Internal Enterprise GRPC Server", errChan, true, func() error {
+		return s.internal.Wait()
+	})
+	return <-errChan
 }
 
 func RunSidecar(ctx context.Context, config any) error {
@@ -259,7 +335,7 @@ func RunSidecar(ctx context.Context, config any) error {
 		debug
 		proxy
 	*/
-
+	return errors.New("unimplemented")
 }
 
 func RunPausedServer(ctx context.Context, config any) error {
@@ -277,7 +353,7 @@ func RunPausedServer(ctx context.Context, config any) error {
 		admin
 		health
 	*/
-
+	return errors.New("unimplemented")
 }
 
 func setup(config interface{}, service string) (env serviceenv.ServiceEnv, err error) {
@@ -412,9 +488,21 @@ func fullEnterpriseServer(s *Server) error {
 	return nil
 }
 
+func enterpriseEnterpriseServer(s *Server) error {
+	s.enterpriseEnv = eprsserver.EnvFromServiceEnv(s.env, path.Join(s.env.Config().EtcdPrefix, s.env.Config().EnterpriseEtcdPrefix), s.txnEnv)
+	e, err := eprsserver.NewEnterpriseServer(s.enterpriseEnv, true)
+	if err != nil {
+		return err
+	}
+	s.registerGRPCServer(func(g *grpc.Server) { eprsclient.RegisterAPIServer(g, e) })
+	s.bootstrappers = append(s.bootstrappers, e)
+	s.env.SetEnterpriseServer(e)
+	s.licenseEnv.EnterpriseServer = e
+	return nil
+}
+
 func identityServer(s *Server) error {
 	env := s.env
-	// FIXME: ensure that this is optional for enterprise/sidecar/paused
 	if env.Config().EnterpriseMember {
 		return nil
 	}
@@ -428,8 +516,20 @@ func identityServer(s *Server) error {
 	return nil
 }
 
+func enterpriseIdentityServer(s *Server) error {
+	env := s.env
+	i := identityserver.NewIdentityServer(
+		identityserver.EnvFromServiceEnv(env),
+		true,
+	)
+	s.registerGRPCServer(func(g *grpc.Server) { identity.RegisterAPIServer(g, i) })
+	env.SetIdentityServer(i)
+	s.bootstrappers = append(s.bootstrappers, i)
+	return nil
+}
+
 func authServer(s *Server) error {
-	// FIXME: check that onlyCriticalServers makes sense for enterprise/sidecar/paused
+	// FIXME: check that onlyCriticalServers makes sense for sidecar/paused
 	a, err := authserver.NewAuthServer(
 		authserver.EnvFromServiceEnv(s.env, s.txnEnv),
 		true, !s.onlyCriticalServers, true,
@@ -439,7 +539,7 @@ func authServer(s *Server) error {
 	}
 	s.registerGRPCServer(func(g *grpc.Server) { auth.RegisterAPIServer(g, a) })
 	s.env.SetAuthServer(a)
-	// FIXME: can this be nil for enterprise/sidecar/paused?
+	// FIXME: can this be nil for sidecar/paused?
 	s.enterpriseEnv.AuthServer = a
 	s.bootstrappers = append(s.bootstrappers, a)
 	return nil
