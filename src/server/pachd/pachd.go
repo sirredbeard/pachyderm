@@ -75,7 +75,7 @@ type Server struct {
 	external *grpcutil.Server
 	// s3
 	// prometheus
-	onlyCriticalServers bool
+	onlyCriticalServers bool // FIXME: this is just s.env.RequireCriticalServersOnly
 	bootstrappers       []bootstrapper
 
 	licenseEnv *licenseserver.Env
@@ -344,22 +344,112 @@ func RunSidecar(ctx context.Context, config any) (retErr error) {
 	return s.internal.Wait()
 }
 
-func RunPausedServer(ctx context.Context, config any) error {
-	/*
-		internal
-		external
-		s3 ??
-		prometheus ??
-
-		license
-		enterprise
-		identity
-		auth
-		txn
-		admin
-		health
-	*/
-	return errors.New("unimplemented")
+func RunPausedServer(ctx context.Context, config any) (retErr error) {
+	var (
+		s   = new(Server)
+		err error
+	)
+	interruptChan := make(chan os.Signal, 1)
+	signal.Notify(interruptChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer func() {
+		if retErr != nil {
+			pprof.Lookup("goroutine").WriteTo(os.Stderr, 2) //nolint:errcheck
+		}
+	}()
+	log.Println("starting up in paused mode")
+	if s.env, err = setup(config, "pachyderm-pachd-paused"); err != nil {
+		return err
+	}
+	if err := setupDB(context.Background(), s.env); err != nil {
+		return err
+	}
+	if !s.env.Config().EnterpriseMember {
+		s.env.InitDexDB()
+	}
+	s.onlyCriticalServers = s.env.Config().RequireCriticalServersOnly
+	// Setup External Pachd GRPC Server.
+	authInterceptor := authmw.NewInterceptor(s.env.AuthServer)
+	loggingInterceptor := loggingmw.NewLoggingInterceptor(s.env.Logger())
+	s.external, err = newExternalServer(ctx, authInterceptor, loggingInterceptor)
+	if err != nil {
+		return err
+	}
+	// Setup Internal Pachd GRPC Server.
+	s.internal, err = newInternalServer(ctx, authInterceptor, loggingInterceptor)
+	if err != nil {
+		return err
+	}
+	s.txnEnv = transactionenv.New()
+	s.licenseEnv = licenseserver.EnvFromServiceEnv(s.env)
+	if err := s.initServers(
+		licenseServer,
+		pausedEnterpriseServer,
+		identityServer,
+		authServer,
+		transactionServer,
+		adminServer,
+		healthServer,
+	); err != nil {
+		return err
+	}
+	// Stop workers because unpaused pachds in the process
+	// of rolling may have started them back up.
+	if err := s.enterpriseEnv.StopWorkers(ctx); err != nil {
+		return err
+	}
+	s.txnEnv.Initialize(s.env, s.txn)
+	if _, err := s.internal.ListenTCP("", s.env.Config().PeerPort); err != nil {
+		return err
+	}
+	if _, err := s.external.ListenTCP("", s.env.Config().Port); err != nil {
+		return err
+	}
+	s.health.Resume()
+	// Create the goroutines for the servers.
+	// Any server error is considered critical and will cause Pachd to exit.
+	// The first server that errors will have its error message logged.
+	errChan := make(chan error, 1)
+	go waitForError("External Pachd GRPC Server", errChan, true, func() error {
+		return s.external.Wait()
+	})
+	go waitForError("Internal Pachd GRPC Server", errChan, true, func() error {
+		return s.internal.Wait()
+	})
+	go waitForError("S3 Server", errChan, !s.onlyCriticalServers, func() error {
+		router := s3.Router(s3.NewMasterDriver(), s.env.GetPachClient)
+		server := s3.Server(s.env.Config().S3GatewayPort, router)
+		certPath, keyPath, err := pachtls.GetCertPaths()
+		if err != nil {
+			log.Warnf("s3gateway TLS disabled: %v", err)
+			return errors.EnsureStack(server.ListenAndServe())
+		}
+		cLoader := pachtls.NewCertLoader(certPath, keyPath, pachtls.CertCheckFrequency)
+		// Read TLS cert and key
+		err = cLoader.LoadAndStart()
+		if err != nil {
+			return errors.Wrapf(err, "couldn't load TLS cert for s3gateway: %v", err)
+		}
+		server.TLSConfig = &tls.Config{GetCertificate: cLoader.GetCertificate}
+		return errors.EnsureStack(server.ListenAndServeTLS(certPath, keyPath))
+	})
+	go waitForError("Prometheus Server", errChan, s.onlyCriticalServers, func() error {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		return errors.EnsureStack(http.ListenAndServe(fmt.Sprintf(":%v", s.env.Config().PrometheusPort), mux))
+	})
+	go func(c chan os.Signal) {
+		<-c
+		log.Println("terminating; waiting for paused pachd server to gracefully stop")
+		var g, _ = errgroup.WithContext(ctx)
+		g.Go(func() error { s.external.Server.GracefulStop(); return nil })
+		g.Go(func() error { s.internal.Server.GracefulStop(); return nil })
+		if err := g.Wait(); err != nil {
+			log.Errorf("error waiting for paused pachd server to gracefully stop: %v", err)
+		} else {
+			log.Println("gRPC server gracefully stopped")
+		}
+	}(interruptChan)
+	return <-errChan
 }
 
 func setup(config interface{}, service string) (env serviceenv.ServiceEnv, err error) {
@@ -494,6 +584,23 @@ func fullEnterpriseServer(s *Server) error {
 	return nil
 }
 
+func pausedEnterpriseServer(s *Server) error {
+	env := s.env
+	s.enterpriseEnv = eprsserver.EnvFromServiceEnv(env,
+		path.Join(env.Config().EtcdPrefix, env.Config().EnterpriseEtcdPrefix),
+		s.txnEnv,
+		eprsserver.WithMode(eprsserver.PausedMode),
+		eprsserver.WithUnpausedMode(os.Getenv("UNPAUSED_MODE")))
+	e, err := eprsserver.NewEnterpriseServer(s.enterpriseEnv, true)
+	if err != nil {
+		return err
+	}
+	s.registerGRPCServer(func(g *grpc.Server) { eprsclient.RegisterAPIServer(g, e) })
+	env.SetEnterpriseServer(e)
+	s.licenseEnv.EnterpriseServer = e
+	return nil
+}
+
 func enterpriseEnterpriseServer(s *Server) error {
 	s.enterpriseEnv = eprsserver.EnvFromServiceEnv(s.env, path.Join(s.env.Config().EtcdPrefix, s.env.Config().EnterpriseEtcdPrefix), s.txnEnv)
 	e, err := eprsserver.NewEnterpriseServer(s.enterpriseEnv, true)
@@ -523,10 +630,7 @@ func identityServer(s *Server) error {
 	if env.Config().EnterpriseMember {
 		return nil
 	}
-	i := identityserver.NewIdentityServer(
-		identityserver.EnvFromServiceEnv(env),
-		true,
-	)
+	i := identityserver.NewIdentityServer(identityserver.EnvFromServiceEnv(env), true)
 	s.registerGRPCServer(func(g *grpc.Server) { identity.RegisterAPIServer(g, i) })
 	env.SetIdentityServer(i)
 	s.bootstrappers = append(s.bootstrappers, i)
