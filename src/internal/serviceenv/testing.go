@@ -174,6 +174,4 @@ func (env *TestServiceEnv) SetEnterpriseServer(s enterprise_server.APIServer) {
 }
 
 // InitDexDB implements the ServiceEnv interface.  It is a no-op.
-func (env *TestServiceEnv) InitDexDB() {
-	return
-}
+func (env *TestServiceEnv) InitDexDB() {}
