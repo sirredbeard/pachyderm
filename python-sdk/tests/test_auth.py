@@ -14,8 +14,8 @@ class TestUnitAuth:
 
     @staticmethod
     def test_auth_configuration(auth_client: TestClient):
-        auth_client.auth.get_auth_configuration()
-        auth_client.auth.set_auth_configuration(
+        auth_client.auth.get_configuration()
+        auth_client.auth.set_configuration(
             auth.OidcConfig(
                 issuer="http://localhost:1658",
                 client_id="client",
