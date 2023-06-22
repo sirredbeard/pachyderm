@@ -1461,7 +1461,7 @@ jobs:
           command: |
             helm install pachd ../etc/helm/pachyderm --set deployTarget=LOCAL,pachd.image.tag=${CIRCLE_SHA1},proxy.service.type=NodePort
             kubectl create namespace enterprise --dry-run=client -o yaml | kubectl apply -f -
-            helm install pachd-enterprise ../etc/helm/pachyderm --namespace enterprise --set deployTarget=LOCAL,pachd.image.tag=${CIRCLE_SHA1},proxy.service.type=NodePort,proxy.service.httpNodePort=30081,pachd.enterpriseLicenseKey=${ENT_ACT_CODE}
+            helm install pachd-enterprise ../etc/helm/pachyderm --namespace enterprise --set deployTarget=LOCAL,pachd.image.tag=${CIRCLE_SHA1},proxy.service.type=NodePort,proxy.service.httpNodePort=30081,pachd.enterpriseLicenseKey="eyJ0b2tlbiI6IntcImlkXCI6XCJhMGZmY2RiYy0wZTRlLTQ0YWUtOTZlMC00NGFkY2NjMDllMTZcIixcImV4cGlyeVwiOlwiMjAyNC0wMy0yN1QxODoxNjo0NFpcIn0iLCJzaWduYXR1cmUiOiJKMWVPc29WV3B4bmhBV3JIekNyRXltZytFRVZpTnZkQWladkNhTUZrbDNYWlVCZHdSNGluZmx3M3E3cFVMNXJsa3lzMUxXaDRSbUd0UGwvaHVSR2FpUGMzWnRMOXpQWTdkZEQrUXNBYTJiM2JNSm9aRnI4UDFFVVZVK2Y0MHNBVzFRckdIZTc1N2xVZ2N1M2F3ZTI1Szh1dnlmdjBGYTFMdktJVHRRSlphQnFMb1dCYXNaUkZKU0ZsOUhrRWdtb0RVWERSZUJ0d1NnMExuTnVIVEw4bmgwNi9SSVNoOTFvaGdZSit6ZFdJUm5veVR6bHpEQXNYWDRiTFlSb1JJMDBJOTFKUDk0R20wMzVReEZ1YnIyK09pVmlIUnpxQnlQRXdXdVNMZDB4U2FkTU1STzhkYkNYaS9UUnlEZDlxTUhnZ0hRdGZ4bi8xcVlpYkFHSEpLM2s0MkNub0pPUXlVeU9uTGxMbEtYUkhXek9FVW93VnVlSDJCM0VVVWNTWTdSS092VzFPUGhFbEVnVnovbG0wdGpXazNVWnhqVStpQW5pa1pvQXJoQkQva2RnZGNERWpPUjFMVldlb25DbkkwdFgxZk5qL1B5cThma2E4K2l4QnEySWVlT2N3L2xjeVl1Q3VBQkwrTXdCcE1WR3p2UWNQNEFKcEZXcXhWS3Z3aXdHSFRPbVZMS3BPaGJqTkhVYnZXaVg0MjJFYXFIeS9EVm03bHU2djI1M05rTmJRNWxOVDZtZGVVcDQ0NVdnZUkrMmh5TkxiSHlzekQxNFdNa0VXS0w4K2tRaHl2N0JTOStjOS9uTXgwNjBrRklCR3hUTGNlOVNXV0FZTnZFQURuSlptbllMNm1kd25lT3pKbGF4MGRCOWZPMW11dmNRcnhUY1k4RHpiT0hrbG52dz0ifQ=="
       - run:
           name: Wait for pach # need to wait before testing kubectl as pach is not visible to kubectl yet
           command: |
@@ -1474,7 +1474,7 @@ jobs:
             PACH_PYTHON_TEST_HOST="$(minikube ip)" \
             PACH_PYTHON_TEST_PORT="30080" \
             PACH_PYTHON_TEST_PORT_ENTERPRISE="30081" \
-            ENTERPRISE_CODE_ENV=${ENT_ACT_CODE} \
+            ENTERPRISE_CODE_ENV="eyJ0b2tlbiI6IntcImlkXCI6XCJhMGZmY2RiYy0wZTRlLTQ0YWUtOTZlMC00NGFkY2NjMDllMTZcIixcImV4cGlyeVwiOlwiMjAyNC0wMy0yN1QxODoxNjo0NFpcIn0iLCJzaWduYXR1cmUiOiJKMWVPc29WV3B4bmhBV3JIekNyRXltZytFRVZpTnZkQWladkNhTUZrbDNYWlVCZHdSNGluZmx3M3E3cFVMNXJsa3lzMUxXaDRSbUd0UGwvaHVSR2FpUGMzWnRMOXpQWTdkZEQrUXNBYTJiM2JNSm9aRnI4UDFFVVZVK2Y0MHNBVzFRckdIZTc1N2xVZ2N1M2F3ZTI1Szh1dnlmdjBGYTFMdktJVHRRSlphQnFMb1dCYXNaUkZKU0ZsOUhrRWdtb0RVWERSZUJ0d1NnMExuTnVIVEw4bmgwNi9SSVNoOTFvaGdZSit6ZFdJUm5veVR6bHpEQXNYWDRiTFlSb1JJMDBJOTFKUDk0R20wMzVReEZ1YnIyK09pVmlIUnpxQnlQRXdXdVNMZDB4U2FkTU1STzhkYkNYaS9UUnlEZDlxTUhnZ0hRdGZ4bi8xcVlpYkFHSEpLM2s0MkNub0pPUXlVeU9uTGxMbEtYUkhXek9FVW93VnVlSDJCM0VVVWNTWTdSS092VzFPUGhFbEVnVnovbG0wdGpXazNVWnhqVStpQW5pa1pvQXJoQkQva2RnZGNERWpPUjFMVldlb25DbkkwdFgxZk5qL1B5cThma2E4K2l4QnEySWVlT2N3L2xjeVl1Q3VBQkwrTXdCcE1WR3p2UWNQNEFKcEZXcXhWS3Z3aXdHSFRPbVZMS3BPaGJqTkhVYnZXaVg0MjJFYXFIeS9EVm03bHU2djI1M05rTmJRNWxOVDZtZGVVcDQ0NVdnZUkrMmh5TkxiSHlzekQxNFdNa0VXS0w4K2tRaHl2N0JTOStjOS9uTXgwNjBrRklCR3hUTGNlOVNXV0FZTnZFQURuSlptbllMNm1kd25lT3pKbGF4MGRCOWZPMW11dmNRcnhUY1k4RHpiT0hrbG52dz0ifQ==" \
             PYTHON_SDK_TESTING_IMAGE=pachyderm/python-sdk-ci-testing:$CIRCLE_SHA1 \
             poetry run pytest -vvv tests
 
