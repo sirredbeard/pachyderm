@@ -40,6 +40,7 @@ def auth_client(client: "TestClient") -> "TestClient":
     license_id = "localhost"
     license_server = "localhost:1650"
 
+    client.enterprise.activate(license_server=license_server, id=license_id, secret=secret)
     client.auth_token = auth_token
     client.auth.activate(root_token=auth_token)
     client.identity.set_identity_server_config(
@@ -48,7 +49,6 @@ def auth_client(client: "TestClient") -> "TestClient":
 
     client.license.activate(activation_code=activation_code)
     client.license.add_cluster(id=license_id, address=license_server, secret=secret)
-    client.enterprise.activate(license_server=license_server, id=license_id, secret=secret)
     yield client
 
     # not redundant because auth_token could be overriden by tests
