@@ -160,7 +160,7 @@ func ensureDBEnv(t testing.TB, ctx context.Context) error {
 		PortMap: map[uint16]uint16{
 			30228: 5432,
 		},
-		Image: "postgres:13.0-alpine",
+		Image: "postgres:15.5",
 		Cmd:   []string{"postgres", "-c", "max_connections=500"},
 	}); err != nil {
 		return errors.EnsureStack(err)
