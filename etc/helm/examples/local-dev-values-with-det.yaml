@@ -85,7 +85,7 @@ determined:
   masterCpuRequest: 250m
   masterMemRequest: 256M
   oidc:
-    enabled: true 
+    enabled: false 
     idpRecipientUrl: http://localhost:8282
-    idpSsoUrl: http://pachd.default.svc.cluster.local:30658/dex #"http://localhost:8283" 
-    clientSecret: "123"
+  #   idpSsoUrl: http://pachd.default.svc.cluster.local:30658/dex #"http://localhost:8283" 
+  #   clientSecret: "123"
