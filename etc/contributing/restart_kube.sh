@@ -25,6 +25,7 @@
 source_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 function ts {
+  is_echo="$( echo "$-" | grep x )"
   test -n "${is_echo}" && set +x
   echo "$(date +%H:%M:%S.%N): " "${@}"
   test -n "${is_echo}" && set -x
