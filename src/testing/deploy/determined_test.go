@@ -119,6 +119,28 @@ func TestDeterminedInstallAndIntegration(t *testing.T) {
 	}, 5*time.Second)
 }
 
+func TestDeterminedEnterpriseNoOIDC(t *testing.T) {
+	t.Parallel()
+	valueOverrides := make(map[string]string)
+	maps.Copy(valueOverrides, globalValueOverrides)
+	valueOverrides["determined.oidc.enabled"] = "false"
+	valueOverrides["determined.oidc.clientId"] = ""
+	ns, portOffset := minikubetestenv.ClaimCluster(t)
+	k := testutil.GetKubeClient(t)
+	opts := &minikubetestenv.DeployOpts{
+		AuthUser:   auth.RootUser,
+		Enterprise: true,
+		PortOffset: portOffset,
+		Determined: true,
+	}
+	valueOverrides["pachd.replicas"] = "2"
+	opts.ValueOverrides = valueOverrides
+	t.Logf("Determined installing in namespace %s", ns)
+	c := minikubetestenv.InstallRelease(t, context.Background(), ns, k, opts)
+	_, err := c.Version()
+	require.NoError(t, err)
+}
+
 func determinedLogin(t testing.TB, detUrl url.URL, username string, password string) string {
 	detUrl.Path = detLoginPath
 	req, err := http.NewRequest(
