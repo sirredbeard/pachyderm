@@ -25,9 +25,9 @@
 source_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 function ts {
-  set +x
+  test -n "${is_echo}" && set +x
   echo "$(date +%H:%M:%S.%N): " "${@}"
-  set -x
+  test -n "${is_echo}" && set -x
 }
 export -f ts
 
@@ -237,7 +237,10 @@ function parse_args {
       PACH_ACTION="${_PUSH_PACH}"
       unset RESTART_KUBERNETES
     fi
-  elif minikube status \
+  elif (
+      ( [[ "${CLUSTER_TYPE}" == "minikube" ]] && minikube status ) || \
+      ( [[ "${CLUSTER_TYPE}" != "minikube" ]] && kind get nodes --name="${KIND_CLUSTER_NAME}" )
+    ) \
     && kubectl get po -l app=pachd,suite=pachyderm >/dev/null 2>&1 \
     && [[ "${PACH_VERSION}" == "local" ]] \
     && [[ "${PACH_ACTION}" == "${_REDEPLOY_PACH}" ]] \
@@ -261,6 +264,9 @@ function parse_args {
   export PACH_ACTION
   export PACH_VERSION
   export BUILD_MOUNT_SERVER
+  export CLUSTER_TYPE
+  export KIND_CLUSTER_NAME
+  export KUBE_VERSION
 }
 
 # print pachyderm's kubernetes manifest (for undeploy/deploy)
@@ -361,27 +367,18 @@ function maybe_delete_cluster {
   ts "k8s cluster deletion is done"
 }
 
-function maybe_create_kube_cluster {
-  ts ">>> function maybe_create_kube_cluster <<<"
-  if [[ "${CLUSTER_TYPE}" == "minikube" ]]; then
-    if minikube status; then
-      return
-    fi
-    if [[ -n "${KUBE_VERSION}" ]]; then
-      minikube start --disk-size=15g --kubernetes-version="${KUBE_VERSION}"
-    else
-      minikube start --disk-size=15g
-    fi
-    return
-  fi
-  if [[ "${CLUSTER_TYPE}" == "kind" ]]; then
-    if kind get clusters | grep "${KIND_CLUSTER_NAME}"; then
-      return
-    fi
-    kind create cluster --name="${KIND_CLUSTER_NAME}"
-    return
-  fi
-
+# create_kind_docker_registry creates a docker registry running in a container
+# and accessible to kind. A challenge with attempting to run pachyderm/kind
+# this way is that our helm chart, by default, references a bunch of
+# docker.io-based images (e.g. "docker.io/pachyderm/etcd:v3.5.5") and kind will
+# skip our local registry and go out to the internet for those, undermining the
+# whole speed advanage of setting this thing up. There is a way to tell kind to
+# treat the local registry as a docker.io mirror, but I'm not sure it works.
+#
+# The code below is currently aspirational but not actually used, as 'kind load'
+# has, as of late, proved fast enough for my purposes (it used to be extremely
+# slow)
+function create_kind_docker_registry {
   ###
   # 1. Create registry container (unless it already exists)
   ###
@@ -398,7 +395,7 @@ function maybe_create_kube_cluster {
       --name "${KIND_REGISTRY_NAME}" \
       registry:2.8.3
   fi
-  
+
   ###
   # 2. Create a cluster with the local registry enabled in containerd
   ###
@@ -423,7 +420,7 @@ containerdConfigPatches:
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
     endpoint = ["http://${reg_name}:5000", "https://index.docker.io"]
 EOF
-  
+
   ###
   # 3. Connect the registry to the cluster network if not already connected
   ###
@@ -433,7 +430,7 @@ EOF
   if [ "$(docker inspect -f='{{json .NetworkSettings.Networks.kind}}' "${KIND_REGISTRY_NAME}")" = 'null' ]; then
     docker network connect "kind" "${KIND_REGISTRY_NAME}"
   fi
-  
+
   ###
   # 4. Document the local registry
   # https://github.com/kubernetes/enhancements/tree/master/keps/sig-cluster-lifecycle/generic/1755-communicating-a-local-registry
@@ -449,6 +446,28 @@ data:
     host: "localhost:${KIND_REGISTRY_PORT}"
     help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
 EOF
+}
+
+function maybe_create_kube_cluster {
+  ts ">>> function maybe_create_kube_cluster <<<"
+  if [[ "${CLUSTER_TYPE}" == "minikube" ]]; then
+    if minikube status; then
+      return
+    fi
+    if [[ -n "${KUBE_VERSION}" ]]; then
+      minikube start --disk-size=15g --kubernetes-version="${KUBE_VERSION}"
+    else
+      minikube start --disk-size=15g
+    fi
+    return
+  fi
+  if [[ "${CLUSTER_TYPE}" == "kind" ]]; then
+    if kind get clusters | grep "${KIND_CLUSTER_NAME}"; then
+      return
+    fi
+    kind create cluster --name="${KIND_CLUSTER_NAME}"
+    return
+  fi
 }
 
 # get_old_pach_version gets the version of pach that's running from the
@@ -518,10 +537,10 @@ function maybe_build_or_pull_pachyderm {
 
 }
 
-function push_image {
+function push_images {
   images=( "${@}" )
   if [[ "${CLUSTER_TYPE}" == "minikube" ]]; then
-    for image in "${images[@]}"; do 
+    for image in "${images[@]}"; do
       docker save "${image}" | pv | (\
         if [[ "${nonedriver}" != "true" ]]; then
           eval $(minikube docker-env)
@@ -530,9 +549,10 @@ function push_image {
       )
     done
   elif [[ "${CLUSTER_TYPE}" == "kind" ]]; then
-    kind load docker-image "${images[@]}"
+    ts "Loading images into kind. This should take about a minute, but sometimes hangs..."
+    time kind load docker-image "${images[@]}"
   else
-    for image in "${images[@]}"; do 
+    for image in "${images[@]}"; do
       ## TODO(msteffen) is this sufficient?
       docker tag "${image}" "127.0.0.1:${KIND_REGISTRY_PORT}/${image}"
       docker push "127.0.0.1:${KIND_REGISTRY_PORT}/${image}"
@@ -559,15 +579,24 @@ function maybe_push_images_to_kube {
     "jaegertracing/all-in-one:1.10.1"
   )
   if [[ "${RESTART_KUBERNETES}" == true ]]; then
-    # Minikube is new, so we must re-pull & deploy accessory images
-    for image in "${images[@]}"; do
-      { docker images | grep -F "${image}"; } || docker pull "${image}"
-    done
-    push_image "${images[@]}"
-  fi
+    # pull non-pach images from dockerhub to cache them locally
+    to_pull=( $(
+      for image in "${images[@]}"; do
+        { docker images | grep -F "${image}"; } || echo "${image}"
+      done
+      ) )
+    # pull images in parallel
+    IFS=$'\n' eval 'echo -n "${to_pull[*]}"' \
+      | xargs -t -n1 -P0 -d'\n' docker pull
 
-  if [[ "${PACH_ACTION}" -ge "${_PUSH_PACH}" ]]; then
-    push_image pachyderm/pachd:${PACH_VERSION} pachyderm/worker:${PACH_VERSION}
+    # Finally, push all images that will be used to minkube/kind
+    if [[ "${PACH_ACTION}" -ge "${_PUSH_PACH}" ]]; then
+      images+=(
+        "pachyderm/pachd:${PACH_VERSION}"
+        "pachyderm/worker:${PACH_VERSION}"
+      )
+    fi
+    push_images "${images[@]}"
   fi
 }
 
@@ -626,7 +655,7 @@ function maybe_connect_to_pachyderm {
   if [[ "${CLUSTER_TYPE}" == "minikube" ]]; then
     pachd_ip="$( minikube ip )"
   else
-    pachd_ip="$( kubectl get node/kind-control-plane -o jsonpath="{.status.addresses[0].address}" )"
+    pachd_ip="$( kubectl get node/"${KIND_CLUSTER_NAME}-control-plane" -o jsonpath="{.status.addresses[0].address}" )"
   fi
   local pachd_address="${pachd_ip}:${pachd_port}"
   pachctl config update context --pachd-address="${pachd_address}"
@@ -662,6 +691,7 @@ function maybe_connect_to_pachyderm {
 }
 
 function __main__ {
+  cd "$( git rev-parse --show-toplevel )"
   init_go_env_vars
   parse_args "$@"
   set_helm_command # depends on args (e.g. version="local")
@@ -682,7 +712,10 @@ function __main__ {
   ###
   set +x
   WHEEL='\-/|'; W=0
-  until minikube status; do
+  until (
+    ( [[ "${CLUSTER_TYPE}" == "minikube" ]] && minikube status ) || \
+    kubectl cluster-info
+  ); do
     echo -en "\e[G${WHEEL:$((W=(W+1)%4)):1} Waiting for Minikube to come up..."
     sleep 1
   done
@@ -719,7 +752,6 @@ function __main__ {
   maybe_deploy_pachyderm
   maybe_connect_to_pachyderm
 
-  ts "minikube is up"
-  notify-send -i /home/mjs/Pachyderm/logo_little.png "Minikube is up" -t 10000
+  ts "Your cluster is up"\!
 }
 __main__ "$@"
