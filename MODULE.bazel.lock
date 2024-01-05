@@ -1,6 +1,6 @@
 {
   "lockFileVersion": 3,
-  "moduleFileHash": "d024a09560c21063d3149b6e11249a2f8887160acc0f62414e143bd7effa1ee1",
+  "moduleFileHash": "2394883697f62657e8325673ee913e6483a8f6abbab36bbd7a14358811868757",
   "flags": {
     "cmdRegistries": [
       "https://bcr.bazel.build/"
@@ -71,6 +71,7 @@
             "com_github_aws_aws_lambda_go": "com_github_aws_aws_lambda_go",
             "com_github_aws_aws_sdk_go": "com_github_aws_aws_sdk_go",
             "com_github_azure_azure_sdk_for_go": "com_github_azure_azure_sdk_for_go",
+            "com_github_bazelbuild_rules_go": "com_github_bazelbuild_rules_go",
             "com_github_c_bata_go_prompt": "com_github_c_bata_go_prompt",
             "com_github_cevaris_ordered_map": "com_github_cevaris_ordered_map",
             "com_github_chmduquesne_rollinghash": "com_github_chmduquesne_rollinghash",
@@ -524,7 +525,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 284,
+            "line": 285,
             "column": 32
           },
           "imports": {
@@ -574,7 +575,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 325,
+            "line": 326,
             "column": 20
           },
           "imports": {
@@ -596,7 +597,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 326,
+                "line": 327,
                 "column": 9
               }
             }
@@ -610,7 +611,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 337,
+            "line": 338,
             "column": 23
           },
           "imports": {},
@@ -625,7 +626,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 338,
+                "line": 339,
                 "column": 17
               }
             }
@@ -3500,10 +3501,10 @@
       "general": {
         "bzlTransitiveDigest": "zP01muRk4s4xWGK3gNPXOyDMQkOPsIhu99akeKWFFQ0=",
         "accumulatedFileDigests": {
-          "@@//:go.mod": "98dabeb95be1f951047e402e5b7f7571375bbe774202695be62eea13e7c97430",
+          "@@//:go.mod": "324d603be3b5327ac64cd0cfededfc9fca876764a79061d3253bd4b3001e3623",
           "@@jsonnet_go~0.20.0//:go.sum": "cf6cba94b78ec389dcea5dda9207b611deea699e8dbbe45e98b7a7f990482bb4",
           "@@rules_go~0.44.1//:go.mod": "de22304b720f7f61350ec1c9739de6c0a1b1103fd22bfeb6e92c6c843ddc6d6e",
-          "@@//:go.sum": "f5dff5cc0a790d66a6599d04eb6bdb24b9fc0a4c6ad3a965abdd38657a5b1e56",
+          "@@//:go.sum": "40ff3cb05a7cd811b1a9ad19c49f7cec9550f47b83a32f5d7805854605859b91",
           "@@gazelle~0.35.0//:go.mod": "48dc6e771c3028ee1c18b9ffc81e596fd5f6d7e0016c5ef280e30f2821f60473",
           "@@rules_go~0.44.1//:go.sum": "d56fdb19b21a5f12bcf625c49432371ac39c2def0f564098fbda107f7c080f40",
           "@@gazelle~0.35.0//:go.sum": "7c4460e8ecb5dd8691a51d4fa2e9e4751108b933636497ce46db499fc2e7a88d",
@@ -3975,6 +3976,22 @@
               "sum": "h1:4nB6VFs6lYANUkhjmQfrT4nToW38/YX0WZfztDoiuLI=",
               "replace": "github.com/pachyderm/dex",
               "version": "v0.0.0-20230426001747-706aec218aba"
+            }
+          },
+          "com_github_bazelbuild_rules_go": {
+            "bzlFile": "@@gazelle~0.35.0//internal:go_repository.bzl",
+            "ruleClassName": "go_repository",
+            "attributes": {
+              "name": "gazelle~0.35.0~go_deps~com_github_bazelbuild_rules_go",
+              "importpath": "github.com/bazelbuild/rules_go",
+              "build_directives": [],
+              "build_file_generation": "auto",
+              "build_extra_args": [],
+              "patches": [],
+              "patch_args": [],
+              "sum": "h1:H2nzlC9VLKeVW1D90bahFSszpDE5qvtKr95Nz7BN0WQ=",
+              "replace": "",
+              "version": "v0.44.2"
             }
           },
           "org_golang_x_mod": {
@@ -6620,6 +6637,7 @@
                 "io_k8s_klog_v2": "k8s.io/klog/v2",
                 "io_k8s_kubectl": "k8s.io/kubectl",
                 "io_k8s_utils": "k8s.io/utils",
+                "com_github_bazelbuild_rules_go": "github.com/bazelbuild/rules_go",
                 "com_google_cloud_go": "cloud.google.com/go",
                 "com_google_cloud_go_compute": "cloud.google.com/go/compute",
                 "com_google_cloud_go_compute_metadata": "cloud.google.com/go/compute/metadata",
@@ -6869,7 +6887,6 @@
                 "com_sourcegraph_sourcegraph_appdash": "sourcegraph.com/sourcegraph/appdash",
                 "org_golang_x_tools": "golang.org/x/tools",
                 "com_github_bazelbuild_buildtools": "github.com/bazelbuild/buildtools",
-                "@rules_go~0.44.1": "github.com/bazelbuild/rules_go",
                 "com_github_bmatcuk_doublestar_v4": "github.com/bmatcuk/doublestar/v4",
                 "org_golang_x_tools_go_vcs": "golang.org/x/tools/go/vcs",
                 "com_github_golang_mock": "github.com/golang/mock",
@@ -9804,6 +9821,7 @@
             "io_k8s_klog_v2",
             "io_k8s_kubectl",
             "io_k8s_utils",
+            "com_github_bazelbuild_rules_go",
             "com_github_alessio_shellescape",
             "com_github_felixge_httpsnoop",
             "com_github_fsnotify_fsnotify",
