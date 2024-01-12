@@ -3499,8 +3499,7 @@
       "general": {
         "bzlTransitiveDigest": "zP01muRk4s4xWGK3gNPXOyDMQkOPsIhu99akeKWFFQ0=",
         "accumulatedFileDigests": {
-          "@@//:go.mod": "f81ea0d6cc3e7da1536e222e223b1401d4c51a8d219710c9fbb284f3ba8f7a64",
-          "@@//:go.mod": "f9d7cbdd95ab477ee521ca31af44bf88c4344d4811623ef19ce9f1482e868349",
+          "@@//:go.mod": "15d3dd5f3e64362ecc25a37f3fda5cff66fd5a00b1e1adf2817fe381eca40930",
           "@@jsonnet_go~0.20.0//:go.sum": "cf6cba94b78ec389dcea5dda9207b611deea699e8dbbe45e98b7a7f990482bb4",
           "@@rules_go~0.44.1//:go.mod": "de22304b720f7f61350ec1c9739de6c0a1b1103fd22bfeb6e92c6c843ddc6d6e",
           "@@//:go.sum": "5a36c6eacc60e22e8200a323e0f0340dd4ae34d7bde946c4f756324938ee9d77",
